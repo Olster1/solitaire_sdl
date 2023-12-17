@@ -2,6 +2,12 @@
 #include "./transform.cpp"
 #include <stdio.h>
 
+enum GameMode {
+    NONE_MODE,
+    EASY_MODE,
+    HARD_MODE
+};
+
 enum CardType {
     CARD_DIAMONDS,
     CARD_HEARTS,
@@ -45,6 +51,9 @@ struct GameState {
     float aspectRatio_y_over_x;
 
     Interaction currentInteraction;
+
+    //NOTE: Whether easy or hard mode -> determines whether 1 or 3 draw cards.
+    GameMode gameMode;
 
     int packCount;
     Card pack[52];
@@ -180,6 +189,13 @@ void removeCardFromLocation(GameState *gameState) {
         }
 
     } else if(gameState->currentInteraction.location == FOUNDATION) {
+        CardFoundation *foundation = &gameState->foundations[gameState->currentInteraction.locationIndex];
+
+        assert(foundation->cardCount > 0);
+        if(foundation->cardCount > 0) {
+            foundation->cardCount--;
+        }
+        
 
     } else if(gameState->currentInteraction.location == DRAW_PILE) {
         
@@ -189,7 +205,6 @@ void removeCardFromLocation(GameState *gameState) {
         }
         gameState->showingCount--;
         
-
     }
 }
 
@@ -232,6 +247,17 @@ void drawPlayingField(GameState *gameState) {
     }
 }
 
+bool cardIsOppositeColor(Card c1, Card c2) {
+    bool result = false;
+    if(c1.type == CARD_DIAMONDS || c1.type == CARD_HEARTS) {
+        result = (c2.type == CARD_CLUBS || c2.type == CARD_SPADES);
+    } else if(c1.type == CARD_CLUBS || c1.type == CARD_SPADES) {
+        result = (c2.type == CARD_DIAMONDS || c2.type == CARD_HEARTS);
+    }
+    return result;
+
+}
+
 void updateGame(GameState *gameState, SDL_Renderer *renderer) {
     if(!gameState->inited) {
         loadCardImages(gameState, renderer);
@@ -244,6 +270,8 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
         gameState->packCount = 52;
         gameState->showingCount = 0;
 
+        gameState->gameMode = EASY_MODE;
+
         drawPlayingField(gameState);
 
         gameState->inited = true;
@@ -255,6 +283,14 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
 
      float2 mouseWorldP = make_float2(gameState->mouseP_01.x*fauxWidth, gameState->mouseP_01.y*fauxWidth*gameState->aspectRatio_y_over_x);
      float startX = 100;
+
+    // if(gameState->gameMode == NONE_MODE) {
+        
+
+
+
+    //     return;
+    // }
    
     {
      //NOTE: Draw the deck 
@@ -311,9 +347,10 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
         x += 70;
         
         if(gameState->showingCount > 0) {
-            int count = MathMin(gameState->showingCount, 3);
-            // x += 40*count - 40;
-            for(int i = 0; i < count; ++i) {
+            int count = (gameState->gameMode == EASY_MODE) ? 1 : MathMin(gameState->showingCount, 3);
+            
+            x += 40*count - 40;
+            for(int i = count - 1; i >= 0; --i) {
                 int locationIndex = (gameState->showingCount - 1) - i;
                 Card *c = &gameState->showing[locationIndex];
 
@@ -328,10 +365,11 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
                 if(!gameState->currentInteraction.isValid) {
                     Rect2f bounds = make_rect2f_center_dim(make_float2(T.pos.x, T.pos.y), make_float2(T.scale.x, T.scale.y));
                     
-                    if(gameState->mouseLeftBtn == MOUSE_BUTTON_PRESSED && in_rect2f_bounds(bounds, mouseWorldP) && i == 0) {
+                    if(i == 0 && gameState->mouseLeftBtn == MOUSE_BUTTON_PRESSED && in_rect2f_bounds(bounds, mouseWorldP)) {
                         
                         gameState->currentInteraction.c[0] = *c;
                         gameState->currentInteraction.cardCount = 1;
+                        gameState->currentInteraction.c[0].isTurnedOver = true;
 
                         gameState->currentInteraction.grabOffset = minus_float2(make_float2(T.pos.x, T.pos.y), mouseWorldP);
                         
@@ -352,7 +390,7 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
                     //NOTE: Draw the image
                     SDL_RenderCopy(renderer, img, NULL, &texr);
                 }
-                x += 40;
+                x -= 40;
             }
         }
 
@@ -490,17 +528,28 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
                 } else {
                     Rect2f bounds = make_rect2f_center_dim(make_float2(T.pos.x, T.pos.y), make_float2(T.scale.x, T.scale.y));
                     
+                    //NOTE: Check if user put the card on a pillar
                     if(in_rect2f_bounds(bounds, mouseWorldP)) {
-                        if(gameState->mouseLeftBtn == MOUSE_BUTTON_RELEASED && gameState->currentInteraction.locationIndex != i) {
-                            for(int m = 0; m < gameState->currentInteraction.cardCount; ++m) {
-                                //NOTE: Put on the pillar
-                                p->cards[p->cardCount++] = gameState->currentInteraction.c[m];
-
-                                //NOTE: Take off the where it was
-                                removeCardFromLocation(gameState);
+                        if(gameState->mouseLeftBtn == MOUSE_BUTTON_RELEASED && gameState->currentInteraction.locationIndex != i && j == (p->cardCount - 1)) {
+                            Card lastCard;
+                            if(p->cardCount > 0) {
+                                lastCard = p->cards[p->cardCount - 1];
                             }
+
+                            //NOTE: Check if the card you're trying to put on a pillar is opposite color AND card number - 1
                             
-                            gameState->currentInteraction.isValid = false;
+                            if(p->cardCount == 0 || !lastCard.isTurnedOver || (cardIsOppositeColor(gameState->currentInteraction.c[0], lastCard) && (gameState->currentInteraction.c[0].number + 1) == lastCard.number)) 
+                            {
+                                 for(int m = 0; m < gameState->currentInteraction.cardCount; ++m) {
+                                    //NOTE: Put on the pillar
+                                    p->cards[p->cardCount++] = gameState->currentInteraction.c[m];
+
+                                    //NOTE: Take off the where it was
+                                    removeCardFromLocation(gameState);
+                                }
+                                
+                                gameState->currentInteraction.isValid = false;
+                            }
                         }
                     }
                 }

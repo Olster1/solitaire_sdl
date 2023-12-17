@@ -21,20 +21,21 @@ int main(int argc, char **argv) {
 
   GameState *gameState = (GameState *)malloc(sizeof(GameState));
   memset(gameState, 0, sizeof(GameState));
-  gameState->screenWidth = 800;
+  gameState->screenWidth = 1200;
   gameState->aspectRatio_y_over_x = 1;
   gameState->mouseLeftBtn = MOUSE_BUTTON_NONE;
 
-  SDL_Window *window;
-  SDL_Renderer *renderer;
-  if (SDL_CreateWindowAndRenderer(gameState->screenWidth, gameState->screenWidth*gameState->aspectRatio_y_over_x, flags, &window, &renderer)) {
-    return 0;
-  }
+  SDL_Window *window = SDL_CreateWindow("Solitaire",  SDL_WINDOWPOS_CENTERED,  SDL_WINDOWPOS_CENTERED, gameState->screenWidth, gameState->screenWidth*gameState->aspectRatio_y_over_x, flags);
+
+  SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
 
   SDL_Event event;
   SDL_Event e;
   bool quit = false;
   while (!quit) {
+    Uint32 start = SDL_GetTicks();
+
+
     while (SDL_PollEvent(&e)) {
        if (e.type == SDL_QUIT) {
         quit = true;
@@ -78,6 +79,11 @@ int main(int argc, char **argv) {
     updateGame(gameState, renderer);
 
     SDL_RenderPresent(renderer);
+
+    Uint32 end = SDL_GetTicks();
+
+    // float secondsElapsed = (end - start) / 1000.0f;
+    // printf("Per Frame: %f\n", secondsElapsed);
   }
 
   return 0;
