@@ -50,6 +50,8 @@ struct GameState {
     float screenWidth;
     float aspectRatio_y_over_x;
 
+    CardAnimation cardAnimation;
+
     Interaction currentInteraction;
 
     //NOTE: Whether easy or hard mode -> determines whether 1 or 3 draw cards.
@@ -227,8 +229,18 @@ void loadDeck(GameState *gameState) {
         gameState->pack[i] = c;
     }
 
-    //TODO: Shuffle the deck i.e. sort
-    
+    //NOTE: Shuffle the deck
+    for(int h = 0; h < 5; h++) {
+        for (int i = 0; i < 52; i++) 
+        {
+            int pos = (int)((float)((float)(rand()) / (float)RAND_MAX) * 52);
+            
+            assert(pos >= 0 && pos < 52);
+            Card t = gameState->pack[pos];
+            gameState->pack[pos] = gameState->pack[i];
+            gameState->pack[i] = t;
+        }
+    }
 }
 
 void drawPlayingField(GameState *gameState) {
@@ -377,6 +389,8 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
                         gameState->currentInteraction.locationIndex = locationIndex;
                         
                         gameState->currentInteraction.isValid = true;
+
+                        gameState->cardAnimation.startB = make_float2(T.pos.x, T.pos.y);
                     } 
                 } else if(c->isSameCard(*c, gameState->currentInteraction.c[0])) {
                     //NOTE: Has grabbed this card off the draw pile
@@ -474,6 +488,8 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
                         
                         gameState->currentInteraction.location = FOUNDATION;
                         gameState->currentInteraction.locationIndex = i;
+
+                        gameState->cardAnimation.startB = make_float2(T.pos.x, T.pos.y); 
                         
                         gameState->currentInteraction.isValid = true;
                     }
@@ -522,6 +538,8 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
                         
                         gameState->currentInteraction.location = PILLAR;
                         gameState->currentInteraction.locationIndex = i;
+
+                        gameState->cardAnimation.startB = make_float2(T.pos.x, T.pos.y); 
                         
                         gameState->currentInteraction.isValid = true;
                     }
@@ -569,6 +587,28 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
         }
     }
 
+    float2 cardXY = plus_float2(mouseWorldP, gameState->currentInteraction.grabOffset);
+    bool endAnimation = false;
+
+    if(gameState->cardAnimation.isValid) {
+
+        float speedFactor = 3.0f;
+
+        gameState->cardAnimation.tValue += gameState->dt*speedFactor;
+
+        if(gameState->cardAnimation.tValue > 1.0f) {
+            gameState->cardAnimation.tValue = 1.0f;
+        }
+
+        cardXY.x = lerp(gameState->cardAnimation.startA.x, gameState->cardAnimation.startB.x, make_lerpTValue(gameState->cardAnimation.tValue));
+        cardXY.y = lerp(gameState->cardAnimation.startA.y, gameState->cardAnimation.startB.y, make_lerpTValue(gameState->cardAnimation.tValue));
+        
+        
+        if(gameState->cardAnimation.tValue >= 1.0f) {
+            endAnimation = true;
+        }
+    }
+
     if(gameState->currentInteraction.isValid) {
         float y = 0;
         for(int i = 0; i < gameState->currentInteraction.cardCount; ++i) {
@@ -579,7 +619,7 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
             T.scale = make_float3(50, 100, 1); 
             T.rotationY = 0;
 
-            float2 cardXY = plus_float2(mouseWorldP, gameState->currentInteraction.grabOffset);
+            
             T.pos.x = cardXY.x;
             T.pos.y = cardXY.y + y;
 
@@ -592,9 +632,22 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
         }
     }
 
-     if(gameState->mouseLeftBtn == MOUSE_BUTTON_RELEASED) {
+    if(endAnimation) {
+        gameState->cardAnimation.isValid = false;
         gameState->currentInteraction.isValid = false;
         gameState->currentInteraction.cardCount = 0;
+    }
+
+    if(gameState->mouseLeftBtn == MOUSE_BUTTON_RELEASED && gameState->currentInteraction.isValid && !gameState->cardAnimation.isValid) {
+        //NOTE: Start animation
+        gameState->cardAnimation.isValid = true;
+        gameState->cardAnimation.interaction = gameState->currentInteraction;
+
+        gameState->cardAnimation.tValue = 0;
+
+        gameState->cardAnimation.startA = cardXY;
+        //NOTE: Set when we grabbed it 
+        // gameState->cardAnimation.startB;
     }
 
    

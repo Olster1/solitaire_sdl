@@ -14,6 +14,16 @@ struct Interaction {
     int locationIndex;
 
     bool isValid;
+};
 
-    
+struct CardAnimation {
+    Interaction interaction;
+
+    //NOTE: 0 to 1 
+    float tValue;
+
+    float2 startA;
+    float2 startB;
+
+    bool isValid;
 };

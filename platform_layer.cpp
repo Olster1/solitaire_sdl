@@ -82,8 +82,9 @@ int main(int argc, char **argv) {
 
     Uint32 end = SDL_GetTicks();
 
-    // float secondsElapsed = (end - start) / 1000.0f;
-    // printf("Per Frame: %f\n", secondsElapsed);
+    float secondsElapsed = (end - start) / 1000.0f;
+    
+    gameState->dt = secondsElapsed;
   }
 
   return 0;
