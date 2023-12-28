@@ -1,6 +1,7 @@
 #define arrayCount(array1) (sizeof(array1) / sizeof(array1[0]))
 #include "./transform.cpp"
 #include <stdio.h>
+#include "./sound.cpp"
 
 enum GameMode {
     NONE_MODE,
@@ -16,10 +17,27 @@ enum CardType {
     CARD_NONE,
 };
 
+struct CardAnimation {
+    //NOTE: 0 to 1 
+    float tValue;
+
+    float2 startA;
+    float2 startB;
+
+
+    bool isMovement;
+    bool isFlipAnimation; //NOTE: If card is turning over
+
+    bool isValid;
+};
+
+
 struct Card {
     int number;
     CardType type;
     bool isTurnedOver;
+
+    CardAnimation animation;
 
     bool isSameCard(Card c, Card c1) {
 
@@ -29,7 +47,6 @@ struct Card {
 
     }
 };
-
 
 
 #include "./interaction.cpp"
@@ -50,7 +67,11 @@ struct GameState {
     float screenWidth;
     float aspectRatio_y_over_x;
 
-    CardAnimation cardAnimation;
+    float rot;
+
+    float zoomFactor;
+
+    CardInteractionAnimation cardAnimation;
 
     Interaction currentInteraction;
 
@@ -71,11 +92,51 @@ struct GameState {
     SDL_Texture *cardTemplate; 
     SDL_Texture *backOfCard; 
 
+    SDL_Texture *easyImage; 
+    SDL_Texture *hardImage; 
+    SDL_Texture *zoomOutImage; 
+    SDL_Texture *zoomInImage; 
+
     float2 mouseP_screenSpace;
     float2 mouseP_01;
     MouseKeyState mouseLeftBtn;
 
+    WavFile cardFlipSound[2];
+
+    SDL_AudioSpec audioSpec;
+
 };
+
+
+TransformX updateCardAnimation(GameState *gameState, Card *card, TransformX T) {
+
+    if(card && card->animation.isValid) {
+        //NOTE: Update the animation
+
+        float speedFactor = 3.0f;
+
+        card->animation.tValue += gameState->dt*speedFactor;
+
+        if(card->animation.tValue > 1.0f) {
+            card->animation.tValue = 1.0f;
+        }
+
+        if(card->animation.isMovement) {
+            T.pos.x = lerp(card->animation.startA.x, card->animation.startB.x, make_lerpTValue(card->animation.tValue));
+            T.pos.y = lerp(card->animation.startA.y, card->animation.startB.y, make_lerpTValue(card->animation.tValue));
+        }
+
+        if(card->animation.isFlipAnimation) {
+            T.rotationY = lerp(PI32, 0, make_lerpTValue(card->animation.tValue));
+        }
+        
+        if(card->animation.tValue >= 1.0f) {
+            card->animation.isValid = false;
+        }
+    }
+
+    return T;
+}
 
 SDL_Texture *getCardImage(GameState *gameState, Card *c) {
     int suitFactor = 0;
@@ -129,9 +190,18 @@ void drawPillar(CardPillar *p, GameState *gameState, float x, float y, float2 mo
             if(!c->isTurnedOver) {
                 img = gameState->backOfCard;
             }
+
+            T = updateCardAnimation(gameState, c, T);
+
+            if(T.rotationY > 0.5f*PI32) {
+                img = gameState->backOfCard;
+            }
+
         }
 
         if(drawCard) {
+
+            
             SDL_Rect texr = getModelToScreenSpace(T, screenT, make_float2(gameState->screenWidth, gameState->screenWidth*gameState->aspectRatio_y_over_x));
 
             //NOTE: Draw the image
@@ -144,6 +214,10 @@ void loadCardImages(GameState *gameState, SDL_Renderer *renderer) {
     gameState->cardTemplate = IMG_LoadTexture(renderer, "./cards/card-back2.png");
     gameState->backOfCard = IMG_LoadTexture(renderer, "./cards/card-back1.png");
 
+    gameState->easyImage = IMG_LoadTexture(renderer, "./images/easy.png");
+    gameState->hardImage = IMG_LoadTexture(renderer, "./images/hard.png");
+    gameState->zoomInImage = IMG_LoadTexture(renderer, "./images/zoomIn.png");
+    gameState->zoomOutImage = IMG_LoadTexture(renderer, "./images/zoomOut.png");
 
     for(int i = 0; i < 52; i++) {
          char *type = "";
@@ -180,6 +254,17 @@ void addToPillar(GameState *gameState, int pillarIndex, Card c) {
 
 }
 
+void beginFlipAnimation(GameState *gameState, Card *card) {
+     card->animation.tValue = 0;
+
+    card->animation.isMovement = false;
+    card->animation.isFlipAnimation = true; 
+
+    card->animation.isValid = true;
+
+    playSound(&gameState->cardFlipSound[1]);
+}
+
 
 void removeCardFromLocation(GameState *gameState) {
     if(gameState->currentInteraction.location == PILLAR) {
@@ -188,6 +273,8 @@ void removeCardFromLocation(GameState *gameState) {
 
         if(pillar->cardCount > 0) {
             pillar->cards[pillar->cardCount - 1].isTurnedOver = true;
+            
+            beginFlipAnimation(gameState, &pillar->cards[pillar->cardCount - 1]);
         }
 
     } else if(gameState->currentInteraction.location == FOUNDATION) {
@@ -282,27 +369,64 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
         gameState->packCount = 52;
         gameState->showingCount = 0;
 
-        gameState->gameMode = EASY_MODE;
+        gameState->gameMode = NONE_MODE;
+        gameState->zoomFactor = 1;
 
         drawPlayingField(gameState);
+
+        loadWavFile(&gameState->cardFlipSound[0], "./sounds/cardFlip.wav", &gameState->audioSpec);
+        loadWavFile(&gameState->cardFlipSound[1], "./sounds/cardFlip1.wav", &gameState->audioSpec);
 
         gameState->inited = true;
     }
 
-    float fauxWidth = 800;
+    //NOTE: For debug testing card rotation
+    // gameState->rot += gameState->dt;
+
+    float fauxWidth = 800*gameState->zoomFactor;
     float fauxHeight = fauxWidth*gameState->aspectRatio_y_over_x;
     float16 screenT = make_ortho_matrix_bottom_left_corner(fauxWidth, fauxHeight, MATH_3D_NEAR_CLIP_PlANE, MATH_3D_FAR_CLIP_PlANE);
 
      float2 mouseWorldP = make_float2(gameState->mouseP_01.x*fauxWidth, gameState->mouseP_01.y*fauxWidth*gameState->aspectRatio_y_over_x);
      float startX = 100;
 
-    // if(gameState->gameMode == NONE_MODE) {
+    if(gameState->gameMode == NONE_MODE) {
+        float offsetX = 0.1f*fauxWidth;
+        float x =  (fauxWidth * 0.5f) - offsetX;
+        float y = fauxHeight / 2.0f;
         
 
+        SDL_Texture *images[2] = {gameState->easyImage, gameState->hardImage};
 
+        for(int i = 0; i < arrayCount(images); ++i) {
+            TransformX T;
+            T.pos = make_float3(x, y, 0); 
+            T.scale = make_float3(100, 100, 1); 
+            T.rotationY = 0;
 
-    //     return;
-    // }
+            SDL_Texture *img = images[i];
+
+            SDL_Rect texr = getModelToScreenSpace(T, screenT, make_float2(gameState->screenWidth, gameState->screenWidth*gameState->aspectRatio_y_over_x));
+
+            //NOTE: Draw the image
+            SDL_RenderCopy(renderer, img, NULL, &texr);
+
+            x += 2*offsetX;
+
+            Rect2f bounds = make_rect2f_center_dim(make_float2(T.pos.x, T.pos.y), make_float2(T.scale.x, T.scale.y));
+
+            if(in_rect2f_bounds(bounds, mouseWorldP) && gameState->mouseLeftBtn == MOUSE_BUTTON_PRESSED) { 
+
+                if(i == 0) {
+                    gameState->gameMode = EASY_MODE;
+                } else if(i == 1) {
+                    gameState->gameMode = HARD_MODE;
+                }
+            }
+        }
+        
+        return;
+    }
    
     {
      //NOTE: Draw the deck 
@@ -327,6 +451,7 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
                 Rect2f bounds = make_rect2f_center_dim(make_float2(T.pos.x, T.pos.y), make_float2(T.scale.x, T.scale.y));
 
                 if(in_rect2f_bounds(bounds, mouseWorldP) && gameState->mouseLeftBtn == MOUSE_BUTTON_PRESSED) {
+                        playSound(&gameState->cardFlipSound[1]);
                     if(gameState->packCount > 0) {
                         //NOTE: Get some cards out
                         int cardsToTake = 3;
@@ -632,6 +757,10 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
         }
     }
 
+    // if(gameState->mouseLeftBtn == MOUSE_BUTTON_PRESSED) {
+    //     playSound(&gameState->cardFlipSound[1]);
+    // }
+
     if(endAnimation) {
         gameState->cardAnimation.isValid = false;
         gameState->currentInteraction.isValid = false;
@@ -648,6 +777,54 @@ void updateGame(GameState *gameState, SDL_Renderer *renderer) {
         gameState->cardAnimation.startA = cardXY;
         //NOTE: Set when we grabbed it 
         // gameState->cardAnimation.startB;
+    }
+
+    if(gameState->gameMode != NONE_MODE) {
+
+        float fauxWidth = 800;
+        float fauxHeight = fauxWidth*gameState->aspectRatio_y_over_x;
+        float16 screenT = make_ortho_matrix_bottom_left_corner(fauxWidth, fauxHeight, MATH_3D_NEAR_CLIP_PlANE, MATH_3D_FAR_CLIP_PlANE);
+
+        float2 mouseWorldP = make_float2(gameState->mouseP_01.x*fauxWidth, gameState->mouseP_01.y*fauxWidth*gameState->aspectRatio_y_over_x);
+
+
+        float size = 50;
+        
+        float x =  fauxWidth - 2*size;
+        float y = fauxHeight - size;
+        
+        
+        SDL_Texture *images[2] = {gameState->zoomInImage, gameState->zoomOutImage};
+
+        for(int i = 0; i < arrayCount(images); ++i) {
+            TransformX T;
+            T.pos = make_float3(x, y, 0); 
+            T.scale = make_float3(size, size, 1); 
+            T.rotationY = 0;
+
+            SDL_Texture *img = images[i];
+
+            SDL_Rect texr = getModelToScreenSpace(T, screenT, make_float2(gameState->screenWidth, gameState->screenWidth*gameState->aspectRatio_y_over_x));
+
+            //NOTE: Draw the image
+            SDL_RenderCopy(renderer, img, NULL, &texr);
+
+            x += size;
+
+            Rect2f bounds = make_rect2f_center_dim(make_float2(T.pos.x, T.pos.y), make_float2(T.scale.x, T.scale.y));
+
+            if(in_rect2f_bounds(bounds, mouseWorldP) && gameState->mouseLeftBtn == MOUSE_BUTTON_PRESSED) { 
+
+                float increment = 0.2f;
+                if(i == 0) {
+                    gameState->zoomFactor -= increment;
+                } else if(i == 1) {
+                    gameState->zoomFactor += increment;
+                }
+            }
+        }
+        
+        return;
     }
 
    

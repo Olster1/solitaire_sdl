@@ -25,6 +25,11 @@ int main(int argc, char **argv) {
   gameState->aspectRatio_y_over_x = 1;
   gameState->mouseLeftBtn = MOUSE_BUTTON_NONE;
 
+  globalSoundState = (EasySound_SoundState *)malloc(sizeof(EasySound_SoundState));
+
+  initAudioSpec(&gameState->audioSpec, 44100);
+  initAudio(&gameState->audioSpec);
+
   SDL_Window *window = SDL_CreateWindow("Solitaire",  SDL_WINDOWPOS_CENTERED,  SDL_WINDOWPOS_CENTERED, gameState->screenWidth, gameState->screenWidth*gameState->aspectRatio_y_over_x, flags);
 
   SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);

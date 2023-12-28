@@ -47,5 +47,11 @@ SDL_Rect getModelToScreenSpace(TransformX T, float16 viewToClipSpace, float2 win
     result.x = pos[0].x;
     result.y = windowScale.y - (result.h + pos[0].y); //NOTE: This is a final conversion since the SDL renderer is top corner positive down
 
+    //NOTE: For card flipping
+    if(result.w < 0) {
+        result.w = pos[0].x - pos[1].x;
+        result.x = pos[1].x;
+    }
+
     return result;
 }

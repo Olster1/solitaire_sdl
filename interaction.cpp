@@ -16,7 +16,7 @@ struct Interaction {
     bool isValid;
 };
 
-struct CardAnimation {
+struct CardInteractionAnimation {
     Interaction interaction;
 
     //NOTE: 0 to 1 
